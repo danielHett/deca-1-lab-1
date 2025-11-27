@@ -3,11 +3,14 @@ package analysis.exercise2;
 import analysis.FileStateFact;
 import analysis.ForwardAnalysis;
 import analysis.VulnerabilityReporter;
+
+import java.io.File;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import sootup.core.jimple.basic.LValue;
 import sootup.core.jimple.basic.Local;
 import sootup.core.jimple.basic.Value;
 import sootup.core.jimple.common.expr.AbstractInvokeExpr;
@@ -26,7 +29,7 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 
 	public TypeStateAnalysis(@Nonnull JavaSootMethod method, @Nonnull VulnerabilityReporter reporter) {
 		super(method, reporter);
-	    // System.out.println(method.getBody());
+		// System.out.println(method.getBody());
 	}
 
 	@Override
@@ -35,6 +38,45 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 		// TODO: Implement your flow function here.
 		// MethodSignature currentMethodSig = method.getSignature();
 		// this.reporter.reportVulnerability(currentMethodSig, stmt);
+
+		// If it's an assignment, we need to check if a file object is getting a new
+		// alias.
+		if (stmt instanceof JAssignStmt) {
+			// First check if the left/right side are file types.
+			Value leftOp = ((JAssignStmt) stmt).getLeftOp();
+			Value rightOp = ((JAssignStmt) stmt).getRightOp();
+
+			if (leftOp.getType().toString().equals("target.exercise2.File")
+					&& rightOp.getType().toString().equals("target.exercise2.File")) {
+				// Then, check if we are creating a new file. If we are, then we need a new
+				// FileState
+				if (rightOp.toString().equals("new target.exercise2.File")) {
+					// Create the new state and add the alias.
+					FileStateFact newState = new FileStateFact(FileStateFact.FileState.Init);
+					newState.addAlias(leftOp);
+					// Add it to the output set.
+					out.add(newState);
+					// We are assigning an existing file to an alias.
+				} else {
+					// First find the alias in the in set.
+					FileStateFact rFile = null;
+					for (FileStateFact fsf : in) {
+						if (fsf.containsAlias(rightOp)) {
+							rFile = fsf;
+						}
+					}
+
+					if (rFile != null) {
+						rFile.addAlias(leftOp);
+					}
+				}
+			}
+
+			// System.out.println("The leftOp: " + leftOp);
+			// System.out.println("The rightOp: " + ((JAssignStmt)
+			// stmt).getRightOp().getType().toString());
+		}
+
 		prettyPrint(in, stmt, out);
 
 	}
@@ -42,22 +84,20 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 	@Nonnull
 	@Override
 	protected Set<FileStateFact> newInitialFlow() {
-		// TODO: Implement your initialization here.
-		// The following line may be just a place holder, check for yourself if
-		// it needs some adjustments.
 		return new HashSet<>();
 	}
 
 	@Override
 	protected void copy(@Nonnull Set<FileStateFact> source, @Nonnull Set<FileStateFact> dest) {
-		// TODO: Implement the copy function here.
+		System.out.println("The destination is empty:  " + (dest.isEmpty() ? "Yes!" : "No!"));
 		for (FileStateFact fsf : source) {
-			dest.add(new FileStateFact(fsf));
+			dest.add(fsf);
 		}
 	}
 
 	@Override
-	protected void merge(@Nonnull Set<FileStateFact> in1, @Nonnull Set<FileStateFact> in2, @Nonnull Set<FileStateFact> out) {
+	protected void merge(@Nonnull Set<FileStateFact> in1, @Nonnull Set<FileStateFact> in2,
+			@Nonnull Set<FileStateFact> out) {
 		// TODO: Implement the merge function here.
 	}
 

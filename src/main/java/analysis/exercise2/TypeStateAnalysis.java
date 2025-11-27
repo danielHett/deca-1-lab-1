@@ -77,8 +77,32 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 			// stmt).getRightOp().getType().toString());
 		}
 
-		prettyPrint(in, stmt, out);
+		// If it's not an assignment, we are looking for open/close statements.
+		if (stmt instanceof JInvokeStmt && ((JInvokeStmt) stmt).getInvokeExpr() instanceof JVirtualInvokeExpr) {
+			JVirtualInvokeExpr invokeExpr = (JVirtualInvokeExpr) ((JInvokeStmt) stmt).getInvokeExpr();
+			String callingAlias = invokeExpr.getBase().toString();
+			String className = invokeExpr.getMethodSignature().getDeclClassType().toString();
+			String mathodName = invokeExpr.getMethodSignature().getName();
 
+			// First, is the base an alias we've already seen?
+			FileStateFact targetFsf = null;
+			for (FileStateFact fsf : in) {
+				if (fsf.containsAlias(callingAlias)) {
+					targetFsf = fsf;
+				}
+			}
+
+			// TODO: What should happen if you try to open an open file?
+			if (targetFsf != null && className.equals("target.exercise2.File") && mathodName.equals("open")) {
+				targetFsf.updateState(FileStateFact.FileState.Open);
+			}
+
+			// TODO: What should happen if you try to close a closed file?
+			if (targetFsf != null && className.equals("target.exercise2.File") && mathodName.equals("close")) {
+				targetFsf.updateState(FileStateFact.FileState.Close);
+			}
+		}
+		prettyPrint(in, stmt, out);
 	}
 
 	@Nonnull

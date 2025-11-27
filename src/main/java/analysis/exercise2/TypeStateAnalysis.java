@@ -4,20 +4,14 @@ import analysis.FileStateFact;
 import analysis.ForwardAnalysis;
 import analysis.VulnerabilityReporter;
 
-import java.io.File;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
-import sootup.core.jimple.basic.LValue;
-import sootup.core.jimple.basic.Local;
 import sootup.core.jimple.basic.Value;
-import sootup.core.jimple.common.expr.AbstractInvokeExpr;
-import sootup.core.jimple.common.expr.JSpecialInvokeExpr;
 import sootup.core.jimple.common.expr.JVirtualInvokeExpr;
 import sootup.core.jimple.common.stmt.JAssignStmt;
 import sootup.core.jimple.common.stmt.JInvokeStmt;
+import sootup.core.jimple.common.stmt.JReturnStmt;
 import sootup.core.jimple.common.stmt.JReturnVoidStmt;
 import sootup.core.jimple.common.stmt.Stmt;
 import sootup.core.signatures.MethodSignature;
@@ -29,16 +23,11 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 
 	public TypeStateAnalysis(@Nonnull JavaSootMethod method, @Nonnull VulnerabilityReporter reporter) {
 		super(method, reporter);
-		// System.out.println(method.getBody());
 	}
 
 	@Override
 	protected void flowThrough(@Nonnull Set<FileStateFact> in, @Nonnull Stmt stmt, @Nonnull Set<FileStateFact> out) {
 		copy(in, out);
-		// TODO: Implement your flow function here.
-		// MethodSignature currentMethodSig = method.getSignature();
-		// this.reporter.reportVulnerability(currentMethodSig, stmt);
-
 		// If it's an assignment, we need to check if a file object is getting a new
 		// alias.
 		if (stmt instanceof JAssignStmt) {
@@ -60,7 +49,7 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 				} else {
 					// First find the alias in the in set.
 					FileStateFact rFile = null;
-					for (FileStateFact fsf : in) {
+					for (FileStateFact fsf : out) {
 						if (fsf.containsAlias(rightOp)) {
 							rFile = fsf;
 						}
@@ -71,10 +60,6 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 					}
 				}
 			}
-
-			// System.out.println("The leftOp: " + leftOp);
-			// System.out.println("The rightOp: " + ((JAssignStmt)
-			// stmt).getRightOp().getType().toString());
 		}
 
 		// If it's not an assignment, we are looking for open/close statements.
@@ -86,23 +71,29 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 
 			// First, is the base an alias we've already seen?
 			FileStateFact targetFsf = null;
-			for (FileStateFact fsf : in) {
+			for (FileStateFact fsf : out) {
 				if (fsf.containsAlias(callingAlias)) {
 					targetFsf = fsf;
 				}
 			}
 
-			// TODO: What should happen if you try to open an open file?
 			if (targetFsf != null && className.equals("target.exercise2.File") && mathodName.equals("open")) {
 				targetFsf.updateState(FileStateFact.FileState.Open);
 			}
 
-			// TODO: What should happen if you try to close a closed file?
 			if (targetFsf != null && className.equals("target.exercise2.File") && mathodName.equals("close")) {
 				targetFsf.updateState(FileStateFact.FileState.Close);
 			}
 		}
-		prettyPrint(in, stmt, out);
+
+		if (stmt instanceof JReturnVoidStmt || stmt instanceof JReturnStmt) {
+			for (FileStateFact fsf : out) {
+				if (fsf.getState() == FileStateFact.FileState.Open) {
+					MethodSignature currentMethodSig = method.getSignature();
+					this.reporter.reportVulnerability(currentMethodSig, stmt);
+				}
+			}
+		}
 	}
 
 	@Nonnull
@@ -113,16 +104,55 @@ public class TypeStateAnalysis extends ForwardAnalysis<Set<FileStateFact>> {
 
 	@Override
 	protected void copy(@Nonnull Set<FileStateFact> source, @Nonnull Set<FileStateFact> dest) {
-		System.out.println("The destination is empty:  " + (dest.isEmpty() ? "Yes!" : "No!"));
 		for (FileStateFact fsf : source) {
-			dest.add(fsf);
+			dest.add(new FileStateFact(fsf));
 		}
 	}
 
 	@Override
 	protected void merge(@Nonnull Set<FileStateFact> in1, @Nonnull Set<FileStateFact> in2,
 			@Nonnull Set<FileStateFact> out) {
-		// TODO: Implement the merge function here.
+		// Simple lattice:
+		// Close
+		// |
+		// Open
+		// |
+		// Init
+
+		// First, let's find all pairs from the two sets of states.
+
+		for (FileStateFact x : in1) {
+			// We store the matching state of x in m.
+			FileStateFact m = null;
+			for (FileStateFact y : in2) {
+				// If we found a match, set m to the matching state and break.
+				if (y.equals(x)) {
+					m = y;
+					break;
+				}
+			}
+
+			if (m != null) {
+				FileStateFact newFsf = new FileStateFact(m);
+				newFsf.updateState(mergeStates(x.getState(), m.getState()));
+				out.add(new FileStateFact(newFsf));
+			} else {
+				out.add(new FileStateFact(x));
+			}
+
+		}
 	}
 
+	private FileStateFact.FileState mergeStates(FileStateFact.FileState x, FileStateFact.FileState y) {
+		return stateToInt(x) > stateToInt(y) ? x : y;
+	}
+
+	private int stateToInt(FileStateFact.FileState x) {
+		if (x == FileStateFact.FileState.Init)
+			return 0;
+		else if (x == FileStateFact.FileState.Open)
+			return 1;
+		else
+			return 3;
+	}
 }
